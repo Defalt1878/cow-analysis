@@ -66,7 +66,6 @@ public class UserStatusChangeNotification : Notification
 	[Required]
 	public TelegramUserStatus NewStatus { get; set; }
 
-
 	public override string GetMessageHtmlContentForDelivery()
 	{
 		if (NewStatus is TelegramUserStatus.Refused && PreviousStatus <= TelegramUserStatus.PendingApprove)
@@ -93,6 +92,44 @@ public class UserStatusChangeNotification : Notification
 	public override Task<IList<long>> GetRecipientsIdsAsync(IServiceProvider? serviceProvider)
 	{
 		return Task.FromResult<IList<long>>(new[] {UserId});
+	}
+}
+
+public class AnalysisNotification : Notification
+{
+	[Required]
+	public Guid CameraId { get; set; }
+
+	public virtual Camera Camera { get; set; } = null!;
+
+	[Required]
+	public int PreviousCowCount { get; set; }
+
+	[Required]
+	public int PreviousCalfCount { get; set; }
+
+	[Required]
+	public int NewCowCount { get; set; }
+
+	[Required]
+	public int NewCalfCount { get; set; }
+
+	public override string GetMessageHtmlContentForDelivery()
+	{
+		return $"Изменилось количество животных на камере: {Camera.Address}:\n" +
+		       $"Предыдущее состояние: коровы - {PreviousCowCount}, телята - {PreviousCalfCount}\n" +
+		       $"Новое состояние: коровы - {NewCowCount}, телята - {NewCalfCount}";
+	}
+
+	public override NotificationButton[][]? GetButtonsMarkupForDelivery()
+	{
+		return null;
+	}
+
+	public override Task<IList<long>> GetRecipientsIdsAsync(IServiceProvider serviceProvider)
+	{
+		var usersRepo = serviceProvider.GetRequiredService<ITelegramUsersRepo>();
+		return usersRepo.GetUsersIdsAsync();
 	}
 }
 

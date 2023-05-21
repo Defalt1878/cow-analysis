@@ -66,6 +66,7 @@ public class CowConfiguration : CowConfigurationBase
 
 	public TelegramConfiguration Telegram { get; set; } = null!;
 	public int? NotificationsUpdateDelay { get; set; }
+	public int AnalysesUpdateIntervalInSeconds { get; set; }
 	public HostLogConfiguration HostLog { get; set; } = null!;
 }
 

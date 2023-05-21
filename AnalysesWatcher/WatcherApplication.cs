@@ -4,23 +4,19 @@ using Database;
 using Database.Di;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Telegram.Bot.Polling;
-using TelegramBot.Telegram;
-using TelegramBot.Telegram.Commands;
-using TelegramBot.Telegram.Notifications;
 using Vostok.Hosting.Abstractions;
 using Vostok.Logging.Abstractions;
 
-namespace TelegramBot;
+namespace AnalysesWatcher;
 
-public class TelegramApplication : BaseApplication
+public class AnalysesWatcherApplication : BaseApplication
 {
 	private ServiceKeepAliver _keepAliver = null!;
 	private TimeSpan _keepAliveInterval;
-	private TimeSpan _notificationsSendDelay;
+	private TimeSpan _updateInterval;
 	private CancellationToken _token;
 
-	private static ILog Log => LogProvider.Get().ForContext<TelegramApplication>();
+	private static ILog Log => LogProvider.Get().ForContext<AnalysesWatcherApplication>();
 
 	public override async Task InitializeAsync(IVostokHostingEnvironment environment)
 	{
@@ -28,16 +24,12 @@ public class TelegramApplication : BaseApplication
 
 		_keepAliver = new ServiceKeepAliver(Configuration.GraphiteServiceName);
 		_keepAliveInterval = TimeSpan.FromSeconds(Configuration.KeepAliveInterval ?? 30);
-		_notificationsSendDelay = TimeSpan.FromSeconds(Configuration.NotificationsUpdateDelay ?? 5);
+		_updateInterval = TimeSpan.FromSeconds(Configuration.AnalysesUpdateIntervalInSeconds);
 		_token = environment.ShutdownToken;
 	}
 
 	public override async Task RunAsync(IVostokHostingEnvironment environment)
 	{
-		var bot = ServiceProvider.GetRequiredService<ITelegramBot>();
-		bot.InitializeBot(_token);
-		bot.StartReceiving(_token);
-
 		await MainLoop();
 	}
 
@@ -45,6 +37,8 @@ public class TelegramApplication : BaseApplication
 	{
 		base.ConfigureServices(services, hostingEnvironment);
 
+		services.AddSingleton<ICameraWatchersFactory, CameraWatchersFactory>();
+		services.AddSingleton<IDbAnalyzesWatcher, DbAnalyzesWatcher>();
 		services.AddDbContext<CowDb>(options => options
 			.UseLazyLoadingProxies()
 			.UseNpgsql(Configuration.Database, o => o.SetPostgresVersion(13, 2))
@@ -55,32 +49,27 @@ public class TelegramApplication : BaseApplication
 	{
 		base.ConfigureDi(services);
 
-		services.AddSingleton<ITelegramBot, Telegram.TelegramBot>();
-		services.AddSingleton<IUpdateHandler, TelegramUpdateHandler>();
-		
-		var tgCommandBase = typeof(ITelegramCommand);
-		foreach (var command in DerivedTypesHelper.GetDerivedTypes(tgCommandBase)) 
-			services.AddSingleton(tgCommandBase, command);
-
-		services.AddScoped<INotificationsSender, NotificationsSender>();
-
 		services.AddDatabaseServices();
 	}
 
-	public async Task MainLoop()
+	private async Task MainLoop()
 	{
-		var scopeFactory = ServiceProvider.GetRequiredService<IServiceScopeFactory>();
-
-		await using var scope = scopeFactory.CreateAsyncScope();
-		var notificationsSender = scope.ServiceProvider.GetRequiredService<INotificationsSender>();
-
+		var analyzesWatcher = ServiceProvider.GetRequiredService<IDbAnalyzesWatcher>();
+		
 		while (true)
 		{
+			await Task.Delay(10000, _token);
 			_token.ThrowIfCancellationRequested();
 			_keepAliver.Ping(_keepAliveInterval);
-			await notificationsSender.SendAllAsync(_token);
+			try
+			{
+				await analyzesWatcher.BuildCamerasNotificationsAsync(_updateInterval);
+			}
+			catch (Exception e)
+			{
+				Log.Error(e, "Unable to build notifications.");
+			}
 			_keepAliver.Ping(_keepAliveInterval);
-			await Task.Delay(_notificationsSendDelay, _token);
 		}
 		// ReSharper disable once FunctionNeverReturns
 	}
