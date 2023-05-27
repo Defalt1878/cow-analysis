@@ -68,7 +68,6 @@ public class CamerasAnalysesRepo : ICamerasAnalysesRepo
 	{
 		var analysis = new CameraAnalysis
 		{
-			Id = Guid.NewGuid(),
 			CameraId = cameraId,
 			DateTime = DateTime.UtcNow,
 			CowCount = cowCount,
